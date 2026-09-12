@@ -78,7 +78,17 @@ Rules:
 
 ## Rules for working on the project
 
-1. Always pull the latest changes from `main` before starting work to minimize merge conflicts.
+### Stratégie Git
+
+- Avant toute nouvelle tâche, vérifier que l'arbre de travail est propre, repasser sur `main` et actualiser les références `origin` (le fork) et `upstream` (le projet officiel).
+- Maintenir `main` du fork à jour avec `upstream/main` par une fusion explicite qui préserve les commits propres au fork. Ne jamais employer de `reset --hard`, de réécriture d'historique ou de force-push pour synchroniser les dépôts.
+- Créer depuis ce `main` à jour une branche descriptive dédiée à chaque correction ou fonctionnalité (`fix/...`, `feat/...`, `chore/...`). Ne pas réaliser les développements courants directement sur `main`.
+- Une fois le changement terminé et vérifié, pousser sa branche vers le fork. Une pull request vers `main` peut être ouverte lorsqu'une revue ou une trace de validation est utile, mais elle reste facultative.
+- Fusionner la branche dans `main` uniquement après validation explicite du propriétaire, soit via la pull request, soit directement avec une fusion Git non destructive si aucune pull request n'est nécessaire.
+- Après la fusion, repasser sur `main`, récupérer son état fusionné et vérifier que `origin/main` est à jour. Supprimer une branche terminée uniquement après confirmation qu'elle n'est plus utile.
+- En cas de conflit avec `origin/main` ou `upstream/main`, résoudre explicitement chaque conflit. Si la résolution est ambiguë, s'arrêter et demander une décision plutôt que d'écraser une version.
+
+1. Always start new work from an up-to-date `main` and follow the Git strategy above to minimize merge conflicts.
 2. Commit messages should be clear and follow the format: `type(scope): short description` (e.g. `fix(sync): resolve concurrent like conflict`). Scope is optional.
 3. Follow current Tauri 2 / React 19 / Rust best practices — when unsure, check official docs rather than guessing; model training data lags fast-moving frameworks like Tauri.
 4. DO NOT edit or renumber existing files in `src-tauri/migrations/` without explicit instruction. Schema changes are additive: add a new numbered migration (next is `0013_...`).

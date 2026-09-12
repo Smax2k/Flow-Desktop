@@ -98,10 +98,31 @@ On Arch-family distributions the AUR package and the planned Flatpak build avoid
 
 Requirements: Node.js 22.12+, pnpm 11.9+, stable Rust, and the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your operating system.
 
+### Application complète avec Tauri
+
+Flow dépend de son backend Rust pour YouTube, la lecture, les téléchargements, les moteurs de
+recommandation et la synchronisation. Utilisez donc Tauri pour développer et utiliser toutes
+les fonctionnalités :
+
 ```sh
 pnpm install --frozen-lockfile
-pnpm tauri dev
+pnpm desktop:dev
 ```
+
+### Prévisualisation web limitée
+
+Le service web reste disponible pour travailler sur l’interface dans un navigateur :
+
+```sh
+pnpm web:service
+```
+
+Le service local est disponible sur <http://127.0.0.1:4178>. Il surveille le frontend,
+reconstruit la build et redémarre son serveur après chaque modification. Une seule instance
+peut utiliser ce port fixe ; si le port est déjà occupé, la commande s’arrête avec une erreur
+claire. Utilisez `Ctrl+C` pour arrêter le serveur et la surveillance sans laisser de processus
+en arrière-plan. Ce mode sert uniquement à prévisualiser l’interface : il n’expose pas le
+backend Rust de Tauri et les fonctions natives utilisent des replis locaux ou de démonstration.
 
 Build packages for the current operating system:
 

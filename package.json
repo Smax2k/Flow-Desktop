@@ -21,9 +21,10 @@
     "desktop:dev": "node scripts/run-tauri-local.mjs dev",
     "desktop:build": "node scripts/run-tauri-local.mjs build",
     "desktop:install": "node scripts/build-and-install-macos.mjs",
+    "web:service": "node scripts/web-service.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/*.test.mjs",
     "test:watch": "vitest",
     "verify:version": "node scripts/verify-release-version.mjs"
   },

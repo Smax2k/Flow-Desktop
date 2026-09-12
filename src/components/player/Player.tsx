@@ -41,6 +41,11 @@ import {
   watchNativeFullscreenExit,
   type WindowFullscreenController,
 } from "../../lib/windowFullscreen";
+import {
+  hasMediaPlaybackProgressed,
+  shouldEnterMediaBuffering,
+  type MediaBufferingSignal,
+} from "../../lib/mediaBuffering";
 
 type PlayerProps = {
   src?: string | null;
@@ -325,6 +330,7 @@ export const Player: React.FC<PlayerProps> = ({
   const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerInsideRef = useRef(false);
   const sleepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skippedSegmentsRef = useRef<Set<string>>(new Set());
   const undoSkippedSegmentsRef = useRef<Set<string>>(new Set());
@@ -340,6 +346,7 @@ export const Player: React.FC<PlayerProps> = ({
   const qualitySwitchSnapshotRef = useRef<QualitySwitchSnapshot | null>(null);
   const qualitySwitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mediaBufferingRef = useRef(false);
+  const bufferingStartedAtRef = useRef<number | null>(null);
   const seekFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const volumeFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ambientCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -465,6 +472,8 @@ export const Player: React.FC<PlayerProps> = ({
   }, [bufferProfile, maxBufferSetting, minBufferSetting, rebufferSetting, startupBufferSetting]);
 
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [cursorHidden, setCursorHidden] = useState(false);
+  const [hasFocusedControl, setHasFocusedControl] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [ambientMode] = useState(true);
   const [ambientSample, setAmbientSample] = useState<AmbientSample>(DEFAULT_AMBIENT_SAMPLE);
@@ -951,6 +960,9 @@ export const Player: React.FC<PlayerProps> = ({
       if (volumeFeedbackTimerRef.current) {
         clearTimeout(volumeFeedbackTimerRef.current);
       }
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+      }
     };
   }, []);
 
@@ -1083,12 +1095,67 @@ export const Player: React.FC<PlayerProps> = ({
     return () => window.clearInterval(interval);
   }, [isPlaying, error, isScrubbing]);
 
+  const canAutoHidePointer =
+    isPlaying &&
+    !settingsOpen &&
+    !isScrubbing &&
+    !hasFocusedControl &&
+    !isPipMode &&
+    !isLoading &&
+    !error &&
+    !errorInfo;
+
+  const clearHideTimer = useCallback(() => {
+    if (!hideTimerRef.current) return;
+    clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = null;
+  }, []);
+
   const revealControls = useCallback(() => {
     setControlsVisible(true);
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    setCursorHidden(false);
+    clearHideTimer();
+    if (!canAutoHidePointer || !pointerInsideRef.current) return;
     hideTimerRef.current = setTimeout(() => {
+      hideTimerRef.current = null;
       setControlsVisible(false);
+      if (pointerInsideRef.current) setCursorHidden(true);
     }, 2400);
+  }, [canAutoHidePointer, clearHideTimer]);
+
+  useEffect(() => {
+    setCursorHidden(false);
+    clearHideTimer();
+
+    if (pointerInsideRef.current) revealControls();
+  }, [canAutoHidePointer, clearHideTimer, isFullscreen, mediaIdentity, revealControls]);
+
+  const handlePointerEnter = useCallback(() => {
+    pointerInsideRef.current = true;
+    revealControls();
+  }, [revealControls]);
+
+  const handlePointerLeave = useCallback(() => {
+    pointerInsideRef.current = false;
+    clearHideTimer();
+    setCursorHidden(false);
+    setControlsVisible(false);
+  }, [clearHideTimer]);
+
+  const handleFocusCapture = useCallback((event: React.FocusEvent<HTMLDivElement>) => {
+    setCursorHidden(false);
+    clearHideTimer();
+    setControlsVisible(true);
+    setHasFocusedControl(event.target !== event.currentTarget);
+  }, [clearHideTimer]);
+
+  const handleBlurCapture = useCallback((event: React.FocusEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget;
+    setHasFocusedControl(
+      nextTarget instanceof Node &&
+      event.currentTarget.contains(nextTarget) &&
+      nextTarget !== event.currentTarget,
+    );
   }, []);
 
   const showSeekFeedback = useCallback((direction: PlayerSeekFeedback["direction"], seconds: number) => {
@@ -1368,6 +1435,7 @@ export const Player: React.FC<PlayerProps> = ({
     const videoStarved = video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA;
     if (mediaBufferingRef.current && !video.paused && !videoStarved) {
       mediaBufferingRef.current = false;
+      bufferingStartedAtRef.current = null;
       setIsBuffering(false);
     }
 
@@ -1748,8 +1816,17 @@ export const Player: React.FC<PlayerProps> = ({
     const video = videoRef.current;
     if (!video) return;
 
-    const onVideoWaiting = () => {
+    const enterBuffering = (signal: MediaBufferingSignal) => {
+      if (!shouldEnterMediaBuffering({
+        signal,
+        paused: video.paused,
+        ended: video.ended,
+        seeking: video.seeking,
+        readyState: video.readyState,
+      })) return;
+
       mediaBufferingRef.current = true;
+      bufferingStartedAtRef.current = video.currentTime;
       setIsBuffering(true);
       if (waitingSinceRef.current === null) waitingSinceRef.current = Date.now();
       stallCountRef.current += 1;
@@ -1759,6 +1836,9 @@ export const Player: React.FC<PlayerProps> = ({
         audioHoldRef.current = true;
         audioRef.current?.pause();
       }
+    };
+    const onVideoWaiting = () => {
+      enterBuffering("waiting");
       logPlayerEvent("html-video-waiting", {
         readyState: video.readyState,
         networkState: video.networkState,
@@ -1766,14 +1846,7 @@ export const Player: React.FC<PlayerProps> = ({
       });
     };
     const onVideoStalled = () => {
-      mediaBufferingRef.current = true;
-      setIsBuffering(true);
-      if (waitingSinceRef.current === null) waitingSinceRef.current = Date.now();
-      stallCountRef.current += 1;
-      if (usesExternalAudio) {
-        audioHoldRef.current = true;
-        audioRef.current?.pause();
-      }
+      enterBuffering("stalled");
       logPlayerEvent("html-video-stalled", {
         readyState: video.readyState,
         networkState: video.networkState,
@@ -1782,6 +1855,7 @@ export const Player: React.FC<PlayerProps> = ({
     };
     const resumeExternalAudio = (eventName: string) => {
       mediaBufferingRef.current = false;
+      bufferingStartedAtRef.current = null;
       setIsBuffering(false);
       waitingSinceRef.current = null;
       if (playbackStartAtRef.current === null) playbackStartAtRef.current = Date.now();
@@ -1814,6 +1888,9 @@ export const Player: React.FC<PlayerProps> = ({
     const onVideoPlaying = () => resumeExternalAudio("html-video-playing");
     const onVideoSeeking = () => {
       lastSeekAtRef.current = Date.now();
+      mediaBufferingRef.current = false;
+      bufferingStartedAtRef.current = null;
+      setIsBuffering(false);
       waitingSinceRef.current = null;
       stallCountRef.current = 0;
       videoProgressSampleRef.current = null;
@@ -1838,6 +1915,7 @@ export const Player: React.FC<PlayerProps> = ({
     };
     const onVideoError = () => {
       mediaBufferingRef.current = false;
+      bufferingStartedAtRef.current = null;
       setIsBuffering(false);
       const code = video.error?.code;
       logPlayerEvent("html-video-error", {
@@ -1889,6 +1967,7 @@ export const Player: React.FC<PlayerProps> = ({
     lastMediaIdentityRef.current = mediaIdentity;
 
     mediaBufferingRef.current = false;
+    bufferingStartedAtRef.current = null;
     setIsBuffering(false);
     videoProgressSampleRef.current = null;
     postSwitchRealignPendingRef.current = true;
@@ -2275,6 +2354,17 @@ export const Player: React.FC<PlayerProps> = ({
     const nextTime = video.currentTime;
     const nextDuration = video.duration || duration || 0;
 
+    if (
+      mediaBufferingRef.current
+      && !video.paused
+      && hasMediaPlaybackProgressed(bufferingStartedAtRef.current, nextTime)
+    ) {
+      mediaBufferingRef.current = false;
+      bufferingStartedAtRef.current = null;
+      waitingSinceRef.current = null;
+      setIsBuffering(false);
+    }
+
     let inMuteSegment = false;
     let muteSegmentCategoryName = "";
 
@@ -2364,12 +2454,18 @@ export const Player: React.FC<PlayerProps> = ({
       ref={containerRef}
       id="flow-player-root"
       data-fullscreen={isFullscreen || undefined}
-      className={cx("group/player", playerRootClasses)}
+      className={cx(
+        "group/player",
+        cursorHidden && "cursor-none [&_*]:!cursor-none",
+        playerRootClasses,
+      )}
       tabIndex={0}
-      onMouseMove={revealControls}
-      onMouseLeave={() => {
-        setControlsVisible(false);
-      }}
+      onPointerEnter={handlePointerEnter}
+      onPointerMove={revealControls}
+      onPointerDown={revealControls}
+      onPointerLeave={handlePointerLeave}
+      onFocusCapture={handleFocusCapture}
+      onBlurCapture={handleBlurCapture}
     >
       {showAmbient && (
         <div
@@ -2405,6 +2501,10 @@ export const Player: React.FC<PlayerProps> = ({
         }}
         onPause={() => {
           const video = videoRef.current;
+          mediaBufferingRef.current = false;
+          bufferingStartedAtRef.current = null;
+          waitingSinceRef.current = null;
+          setIsBuffering(false);
           if (isDashPlayback && qualitySwitchSnapshotRef.current) {
             logPlayerEvent("video-pause-during-quality-switch", {
               snapshot: qualitySwitchSnapshotRef.current,

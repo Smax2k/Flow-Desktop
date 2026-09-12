@@ -88,6 +88,15 @@ Rules:
 8. No dead code: delete unused functions/components/parameters rather than commenting them out.
 9. Comments should only explain non-obvious WHY — never restate WHAT the code already makes obvious through naming.
 
+### Fork and pull request workflow
+
+- This repository is a fork: `origin` is the client fork (`Smax2k/Flow-Desktop`) and `upstream` is the official project (`Flow-Tube/Flow-Desktop`). Verify those relationships from the configured remotes and GitHub metadata before publishing.
+- Push working branches to `origin` only. Never push directly to `upstream`.
+- When the owner asks for a pull request for a product fix or feature, create a cross-fork pull request to `Flow-Tube/Flow-Desktop:main` from `Smax2k/Flow-Desktop:<branch>`, unless the owner explicitly asks for an internal pull request within the fork.
+- Base upstream contributions directly on `upstream/main` so the pull request contains only the intended change and no fork-only commits. Base fork-specific work on `origin/main`.
+- Pull request titles and descriptions targeting the official project must be written entirely in English. Include a concise summary of the problem, the resulting behavior, and the checks that actually passed.
+- Before creating a pull request, check the target repository for an existing open pull request from the same head branch. After creation or editing, verify the base repository, base branch, head owner, head branch, changed files, and displayed metadata.
+
 ## AI-only guidelines
 
 1. Do not modify README/markdown documentation files (including this one and Design.md) unless explicitly asked to.
